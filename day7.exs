@@ -11,7 +11,10 @@ defmodule Day7 do
     |> String.split("\n", trim: true)
     |> Enum.map(&String.split(&1, ":", trim: true))
     |> Enum.map(fn [test_value, numbers] ->
-      [to_int(test_value), String.split(numbers, " ", trim: true) |> Enum.map(&to_int/1)]
+      [
+        String.to_integer(test_value),
+        String.split(numbers, " ", trim: true) |> Enum.map(&String.to_integer/1)
+      ]
     end)
   end
 
@@ -33,7 +36,7 @@ defmodule Day7 do
       fn [test_value, numbers] ->
         [
           test_value,
-          operators([&Kernel.+/2, &Kernel.*/2, :||], length(numbers) - 1)
+          operators([&Kernel.+/2, &Kernel.*/2, &concat/2], length(numbers) - 1)
           |> Enum.map(fn ops ->
             perform_ops(numbers, ops)
           end)
@@ -49,10 +52,6 @@ defmodule Day7 do
   end
 
   defp perform_ops([res], []), do: res
-
-  defp perform_ops([arg1, arg2 | args], [:|| | ops]) do
-    perform_ops([to_int("#{arg1}#{arg2}") | args], ops)
-  end
 
   defp perform_ops([arg1, arg2 | args], [op | ops]) do
     perform_ops([op.(arg1, arg2) | args], ops)
@@ -76,9 +75,15 @@ defmodule Day7 do
     Enum.map(inner, &([op] ++ &1))
   end
 
-  defp to_int(x) do
-    {x, ""} = Integer.parse(x)
-    x
+  # courtesy https://github.com/bjorng/advent-of-code/blob/main/2024/day07/lib/day07.ex
+  defp concat(a, b) do
+    shift(a, b) + b
+  end
+
+  defp shift(a, 0), do: a
+
+  defp shift(a, b) do
+    shift(a * 10, div(b, 10))
   end
 end
 
