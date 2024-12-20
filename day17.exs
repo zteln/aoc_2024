@@ -16,7 +16,7 @@ defmodule Day17 do
     {registers, program} = parse(input)
 
     IO.puts("Part one result: #{part_one(registers, program, opcodes)}")
-    IO.puts("Part two result: #{part_two(program)}")
+    IO.puts("Part two result: #{part_two(program, opcodes)}")
   end
 
   defp part_one(registers, program, opcodes) do
@@ -25,9 +25,17 @@ defmodule Day17 do
     |> Enum.join(",")
   end
 
-  defp part_two(program) do
+  defp part_two(program, opcodes) do
     # Problem specific...
-    ops = fn a -> band(bxor(bxor(bxor(band(a, 7), 3), 5), bsr(a, bxor(band(a, 7), 3))), 7) end
+    # ops = fn a -> band(bxor(bxor(bxor(band(a, 7), 3), 5), bsr(a, bxor(band(a, 7), 3))), 7) end
+
+    # not problem specific
+    ops = fn a ->
+      registers = %{a: a, b: 0, c: 0}
+
+      run_program(registers, program, 0, [], opcodes)
+      |> List.last()
+    end
 
     [out | output] = Enum.reverse(program)
 
