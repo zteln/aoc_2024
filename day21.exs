@@ -1,11 +1,26 @@
 defmodule Day21 do
   def main(input) do
     codes = parse(input)
-    IO.puts("Part one result: #{part_one(codes)}")
-    # part_two(codes) |> IO.inspect()
+
+    {part_one_time, part_one} = :timer.tc(fn -> part_one(codes) end, :microsecond)
+    {part_two_time, part_two} = :timer.tc(fn -> part_two(codes) end, :microsecond)
+
+    IO.puts("Part one result: #{part_one} completed in #{part_one_time} microseconds")
+    IO.puts("Part two result: #{part_two} completed in #{part_two_time} microseconds")
   end
 
   defp part_one(codes) do
+    solve(codes, 2)
+  end
+
+  defp part_two(codes) do
+    solve(codes, 25)
+  end
+
+  defp solve(codes, amount) do
+    robots = for _ <- 1..amount, do: {:a, dir_pad()}
+    robots = [{:a, number_pad()} | robots]
+
     Enum.map(codes, fn code ->
       number =
         Enum.reduce(code, 0, fn
@@ -13,74 +28,98 @@ defmodule Day21 do
           int, acc -> acc * 10 + int
         end)
 
-      codes =
-        press(code, {:a, number_pad()})
-        |> flatten()
-        |> take_smallest()
+      length =
+        press_codes(code, robots)
+        |> Enum.sum()
 
-      best =
-        for _ <- 1..2, reduce: codes do
-          codes ->
-            codes
-            |> Enum.flat_map(fn code ->
-              press(code, {:a, dir_pad()})
-              |> flatten()
-              |> take_smallest()
-            end)
-
-            # |> Enum.uniq()
-        end
-        |> Enum.map(&length/1)
-        |> Enum.min()
-
-      number * best
+      number * length
     end)
     |> Enum.sum()
   end
 
-  # defp part_two(codes) do
-  # end
+  defp press_codes([], _), do: []
 
-  defp press(codes, key, prevs \\ [])
-  defp press([], _, prevs), do: prevs
+  defp press_codes([code_point | code], [robot]) do
+    {sequences, robot} = press(code_point, robot)
 
-  defp press([code | codes], {cursor, grid}, prevs) do
-    start = find_key(cursor, grid)
-    finish = find_key(code, grid)
-    queue = :gb_sets.singleton({distance(start, finish), start, prevs})
-    pad = Map.keys(grid) |> MapSet.new() |> MapSet.delete(start)
-
-    a_stars(pad, queue, finish, find_key(:a, grid))
-    |> MapSet.to_list()
-    |> take_smallest()
-    |> Enum.map(&(&1 ++ [:a]))
-    |> Enum.map(&press(codes, {code, grid}, &1))
+    [
+      Enum.map(sequences, &Enum.count/1)
+      |> Enum.min()
+      | press_codes(code, [robot])
+    ]
   end
 
-  defp a_stars(pad, queue, finish, act, paths \\ MapSet.new()) do
+  defp press_codes([code_point | code], [{cursor, _} = robot | robots]) do
+    {min, robot} =
+      case Process.get({:min, code_point, cursor, length(robots)}) do
+        nil ->
+          {sequences, robot} = press(code_point, robot)
+
+          min =
+            Enum.map(sequences, fn sequence ->
+              press_codes(sequence, robots)
+            end)
+            |> Enum.map(&Enum.sum/1)
+            |> Enum.min()
+
+          Process.put({:min, code_point, cursor, length(robots)}, {min, robot})
+          {min, robot}
+
+        {min, robot} ->
+          {min, robot}
+      end
+
+    [
+      min
+      | press_codes(code, [robot | robots])
+    ]
+  end
+
+  defp press(code_point, {cursor, grid}) do
+    sequences =
+      case Process.get({:shortest_seqs, code_point, cursor}) do
+        nil ->
+          start = find_key(cursor, grid)
+          finish = find_key(code_point, grid)
+          queue = :gb_sets.singleton({distance(start, finish), start, []})
+          pad = Map.keys(grid) |> MapSet.new() |> MapSet.delete(start)
+          sequences = a_stars(pad, queue, finish) |> take_smallest()
+          Process.put({:shortest_seqs, code_point, cursor}, sequences)
+          sequences
+
+        sequences ->
+          sequences
+      end
+
+    {sequences, {code_point, grid}}
+  end
+
+  defp a_stars(pad, queue, finish, sequences \\ MapSet.new()) do
     case take_next(queue) do
       nil ->
-        paths
+        sequences
 
-      {{_score, ^finish, path}, _queue} ->
-        MapSet.put(paths, path)
+      {{_score, ^finish, sequence}, _queue} ->
+        sequence = sequence ++ [:a]
+        MapSet.put(sequences, sequence)
 
-      {{_score, cursor, path}, queue} ->
+      {{_score, cursor, sequence}, queue} ->
         {new_queue, new_pad} =
           adjacent(pad, cursor)
           |> Enum.reduce({queue, pad}, fn adj, {queue, pad} ->
-            score = distance(adj, finish) + length(path) + distance(act, adj)
+            score = distance(adj, finish) + length(sequence)
+            key = translate(diff(adj, cursor))
 
             queue =
-              :gb_sets.add_element({score, adj, path ++ [translate(diff(adj, cursor))]}, queue)
+              :gb_sets.add_element({score, adj, sequence ++ [key]}, queue)
 
             pad = MapSet.delete(pad, adj)
 
             {queue, pad}
           end)
 
-        paths = a_stars(new_pad, new_queue, finish, act, paths)
-        a_stars(pad, queue, finish, act, paths)
+        sequences = a_stars(new_pad, new_queue, finish, sequences)
+        a_stars(pad, queue, finish, sequences)
     end
   end
 
@@ -109,18 +148,6 @@ defmodule Day21 do
   defp find_key(key, grid) do
     {key, _} = Enum.find(grid, &(elem(&1, 1) == key))
     key
-  end
-
-  defp flatten(list, acc \\ [])
-  defp flatten([], acc), do: acc
-
-  defp flatten([a | b], acc) do
-    if Enum.all?(a, &is_atom/1) do
-      flatten(b, [a | acc])
-    else
-      acc = flatten(a, acc)
-      flatten(b, acc)
-    end
   end
 
   defp take_smallest(els) do
