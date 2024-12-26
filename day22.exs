@@ -8,10 +8,10 @@ defmodule Day22 do
       :timer.tc(fn -> part_one(buyers, 2000) end, :millisecond)
 
     {part_two_time, part_two} =
-      :timer.tc(fn -> part_two(buyers, 2000) end, :second)
+      :timer.tc(fn -> part_two(buyers, 2000) end, :millisecond)
 
     IO.puts("Part one result: #{part_one} completed in #{part_one_time} milliseconds")
-    IO.puts("Part two result: #{part_two} completed in #{part_two_time} seconds")
+    IO.puts("Part two result: #{part_two} completed in #{part_two_time} milliseconds")
   end
 
   defp part_one(buyers, amount, sum \\ 0)
@@ -30,78 +30,39 @@ defmodule Day22 do
   end
 
   defp part_two(buyers, amount) do
-    price_changes = price_changes(buyers, amount)
-    sequences = sequences(price_changes, MapSet.new())
-
-    sequences
-    |> Stream.chunk_every(4000)
-    |> Task.async_stream(
-      fn seqs ->
-        test_sequences(seqs, price_changes)
-        |> Enum.max()
-      end,
-      timeout: :infinity
-    )
-    |> Stream.map(&elem(&1, 1))
-    |> Enum.max()
+    price_changes(buyers, amount)
+    |> Enum.max_by(&elem(&1, 1))
+    |> elem(1)
   end
 
-  defp test_sequences(sequences, price_changes, acc \\ [])
-  defp test_sequences([], _price_changes, acc), do: acc
-
-  defp test_sequences([sequence | sequences], price_changes, acc) do
-    sum =
-      Enum.map(price_changes, fn {prices, changes} ->
-        get_price(prices, changes, sequence)
-      end)
-      |> Enum.sum()
-
-    test_sequences(sequences, price_changes, [sum | acc])
-  end
-
-  defp get_price(_, [], _sequence), do: 0
-
-  defp get_price([_hd | tl_prices] = prices, [_hd_change | tl_changes] = changes, sequence) do
-    if List.starts_with?(changes, sequence) do
-      [_, _, _, _, price | _] = prices
-      price
-    else
-      get_price(tl_prices, tl_changes, sequence)
-    end
-  end
-
-  defp sequences([], acc), do: acc
-
-  defp sequences([{_prices, changes} | price_changes], acc) do
-    acc =
-      Enum.chunk_every(changes, 4, 1, :discard)
-      |> Enum.reduce(acc, &MapSet.put(&2, &1))
-
-    sequences(price_changes, acc)
-  end
-
-  defp price_changes(buyers, amount, acc \\ [])
+  defp price_changes(buyers, amount, acc \\ %{})
   defp price_changes([], _, acc), do: acc
 
   defp price_changes([buyer | buyers], amount, acc) do
-    {prices, _} =
-      Enum.reduce(1..amount, {[get_price(buyer)], buyer}, fn _, {prices, buyer} ->
-        secret_number =
-          buyer
-          |> first()
-          |> second()
-          |> third()
+    {acc, _, _, _, _} =
+      Enum.reduce(1..amount, {acc, buyer, get_price(buyer), [], MapSet.new()}, fn
+        _, {acc, prev_secret, prev_price, changes, seqs} ->
+          secret =
+            prev_secret
+            |> first()
+            |> second()
+            |> third()
 
-        {[get_price(secret_number) | prices], secret_number}
+          price = get_price(secret)
+          changes = [price - prev_price | changes]
+          sequence = Enum.take(changes, 4)
+
+          {acc, seqs} =
+            if length(sequence) == 4 and not MapSet.member?(seqs, sequence) do
+              {Map.update(acc, sequence, price, &(&1 + price)), MapSet.put(seqs, sequence)}
+            else
+              {acc, seqs}
+            end
+
+          {acc, secret, price, changes, seqs}
       end)
 
-    prices = Enum.reverse(prices)
-
-    changes =
-      Enum.chunk_every(prices, 2, 1, :discard)
-      |> Enum.map(fn [a, b] -> b - a end)
-
-    price_changes(buyers, amount, [{prices, changes} | acc])
+    price_changes(buyers, amount, acc)
   end
 
   defp get_price(secret), do: secret |> Integer.digits() |> List.last()
